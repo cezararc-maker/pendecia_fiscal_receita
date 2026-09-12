@@ -3,7 +3,7 @@ param(
     [string]$WorkbookPath,
 
     [Parameter(Mandatory=$true)]
-    [ValidateSet('after-cnpj', 'after-procurador', 'full')]
+    [ValidateSet('connected-only', 'after-open', 'after-cnpj', 'after-procurador', 'full')]
     [string]$Stage
 )
 
@@ -23,7 +23,11 @@ Write-Host ''
 Write-Host '[OK] Diagnostico da Receita ativado.' -ForegroundColor Green
 Write-Host "Etapa: $Stage"
 Write-Host 'Enquanto o diagnostico estiver ativo, a fila da Receita deve conter exatamente 1 CNPJ.' -ForegroundColor Yellow
-if ($Stage -eq 'after-cnpj') {
+if ($Stage -eq 'connected-only') {
+    Write-Host 'O Python apenas se conectara ao Chrome. Faca toda a representacao manualmente.'
+} elseif ($Stage -eq 'after-open') {
+    Write-Host 'O Python apenas abrira o menu de representacao. Preencha CNPJ + Procurador + Representar manualmente.'
+} elseif ($Stage -eq 'after-cnpj') {
     Write-Host 'O Python preenchera o CNPJ e aguardara voce concluir Procurador + Representar manualmente.'
 } elseif ($Stage -eq 'after-procurador') {
     Write-Host 'O Python preenchera o CNPJ, selecionara Procurador e aguardara voce clicar Representar manualmente.'
