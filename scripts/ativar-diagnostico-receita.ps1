@@ -3,7 +3,7 @@ param(
     [string]$WorkbookPath,
 
     [Parameter(Mandatory=$true)]
-    [ValidateSet('after-cnpj', 'after-procurador')]
+    [ValidateSet('after-cnpj', 'after-procurador', 'full')]
     [string]$Stage
 )
 
@@ -25,7 +25,9 @@ Write-Host "Etapa: $Stage"
 Write-Host 'Enquanto o diagnostico estiver ativo, a fila da Receita deve conter exatamente 1 CNPJ.' -ForegroundColor Yellow
 if ($Stage -eq 'after-cnpj') {
     Write-Host 'O Python preenchera o CNPJ e aguardara voce concluir Procurador + Representar manualmente.'
-} else {
+} elseif ($Stage -eq 'after-procurador') {
     Write-Host 'O Python preenchera o CNPJ, selecionara Procurador e aguardara voce clicar Representar manualmente.'
+} else {
+    Write-Host 'O Python executara o fluxo automatico completo, mas limitado a exatamente 1 CNPJ.'
 }
 Write-Host "Marcador: $marker"
