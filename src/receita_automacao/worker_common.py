@@ -12,6 +12,7 @@ CNPJ_INPUT_SELECTOR = 'input[placeholder="Digite o CPF ou CNPJ"]'
 SUBMIT_SELECTOR = 'button[type="submit"].br-button.primary.block.margin-5'
 PROFILE_PLACEHOLDER_SELECTOR = "ng-select .ng-placeholder"
 PROFILE_PLACEHOLDER_TEXT = "Digite um perfil de representação"
+PROFILE_ARROW_SELECTOR = ".ng-arrow-wrapper"
 PROFILE_OPTION_SELECTOR = ".ng-dropdown-panel .ng-option"
 PROFILE_BUTTON_SELECTOR = "#avatar-dropdown-trigger"
 NO_PENDENCY_RE = re.compile(r"Sem\s+pend[êe]ncia", re.IGNORECASE)
