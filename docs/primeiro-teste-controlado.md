@@ -4,7 +4,7 @@ Este procedimento valida a integração Excel -> PowerShell -> Python -> Playwri
 
 ## Regra principal
 
-O primeiro teste deve ser feito em uma **cópia da pasta do protótipo**, nunca diretamente na planilha de trabalho.
+Os testes devem ser feitos em uma **cópia da pasta do protótipo**, nunca diretamente na planilha de trabalho.
 
 A cópia precisa manter a estrutura:
 
@@ -15,63 +15,69 @@ PASTA_DO_TESTE\
     automacao\
 ```
 
-## 1. Instalar a integração em modo de validação
+## Fase 1 - uma empresa
 
-Na pasta local do repositório:
+A primeira fase validou o caminho estrutural até a representação:
+
+1. preencher o CNPJ;
+2. localizar o mesmo formulário do botão Representar;
+3. abrir `Digite um perfil de representação`;
+4. usar preferencialmente a seta `.ng-arrow-wrapper` do `ng-select`, com o placeholder como fallback;
+5. localizar a opção `Procurador`;
+6. executar imediatamente `Tab -> 300 ms -> Tab -> 300 ms -> Space` após clicar em Procurador.
+
+### Comportamento esperado do botão Representar
+
+No portal real, após preencher o CNPJ, o botão **Representar** permanece visível porém **desabilitado** enquanto nenhum perfil foi escolhido. Isso é esperado.
+
+O worker não trata esse estado como erro. A habilitação acontece como consequência da seleção de `Procurador`; a confirmação de sucesso continua sendo feita somente depois, pelo CNPJ e pelo `Resultado da Análise` exibidos pelo portal.
+
+## Fase 2 - exatamente duas empresas
+
+A segunda fase serve exclusivamente para validar a troca entre representações. Reinstale a integração na mesma cópia com:
 
 ```powershell
 Set-Location "C:\Users\Cezar.CONTALEX\Desktop\GitHub\Pendências Fiscais Receita"
 
 PowerShell -ExecutionPolicy Bypass -File ".\scripts\instalar-integracao-excel.ps1" `
   -WorkbookPath "C:\CAMINHO\DA\COPIA\Controle_Folha_Cezar_Prototipo_Pendencias_v1.xlsm" `
-  -ValidationMode
+  -ValidationMode `
+  -ValidationCompanyCount 2
 ```
 
-O instalador:
+O marcador de validação passa a registrar `EMPRESAS=2`. Enquanto estiver ativo, qualquer fila diferente de exatamente **2 empresas CNPJ** será bloqueada antes de iniciar o worker.
 
-- preserva a planilha;
-- cria backup dos scripts existentes;
-- mantém o worker Node original para FGTS;
-- instala o worker Python para Receita;
-- cria `modo-validacao-uma-empresa.flag` na pasta de automação.
+### O que observar
 
-Enquanto esse marcador existir, uma fila da Receita com quantidade diferente de **1 empresa** será bloqueada antes de iniciar o worker.
+1. selecione exatamente duas empresas CNPJ na cópia da planilha;
+2. a primeira representação deve seguir o fluxo já validado;
+3. caso o portal mostre validação por imagens, CAPTCHA ou outro desafio de segurança, resolva-o **manualmente**;
+4. o worker deve aguardar o desafio desaparecer e continuar sem tentar resolvê-lo automaticamente;
+5. depois de concluir a primeira empresa, o worker deve respeitar o intervalo mínimo de 40 segundos antes da próxima representação;
+6. em seguida deve reabrir a área Representar, preencher o segundo CNPJ, abrir o perfil pela seta/placeholder, selecionar Procurador e executar a mesma sequência crítica;
+7. o segundo resultado só pode ser aceito se `Resultado da Análise` exibir o segundo CNPJ solicitado e marcador explícito `Com pendência` ou `Sem pendência`.
 
-## 2. Executar somente uma empresa CNPJ
+## Desafios de segurança
 
-1. Abra a cópia da planilha.
-2. Clique em **Preparar navegador**.
-3. Faça login/certificado manualmente.
-4. Confirme que o Portal da Receita abriu a área de pendências.
-5. Na planilha, selecione exatamente **uma empresa com CNPJ**.
-6. Inicie a consulta da Receita usando o escopo de empresas selecionadas.
-7. Não marque uma segunda empresa nesta etapa.
-8. Resolva manualmente qualquer CAPTCHA, confirmação adicional ou desafio de segurança.
+A tela de seleção de imagens exibida pelo portal é tratada como **gate manual**. O projeto não tenta clicar nas imagens, automatizar a resposta nem contornar o mecanismo. O worker apenas detecta a tela, muda o progresso para aguardando validação e retoma quando o desafio deixa de estar visível.
 
-### Comportamento esperado do botão Representar
+O padrão observado no portal inclui texto semelhante a `Selecione tudo mais silencioso que o item mostrado` e foi adicionado à detecção de desafios.
 
-No portal real, após preencher o CNPJ, o botão **Representar** permanece visível porém **desabilitado** enquanto nenhum perfil foi escolhido. Isso é esperado.
+## Critérios de aprovação da troca entre empresas
 
-O worker não deve tratar esse estado como erro. Primeiro ele valida que o botão pertence ao mesmo formulário do CNPJ, depois abre o campo `Digite um perfil de representação`, seleciona `Procurador` e executa imediatamente a sequência crítica `Tab -> 300 ms -> Tab -> 300 ms -> Space`. Nenhuma checagem de `is_enabled()`, refoco, `evaluate()`, gravação de arquivo ou diagnóstico é inserida entre o clique em `Procurador` e essa sequência.
+O teste de duas empresas só é aprovado quando:
 
-A habilitação do botão acontece como consequência da seleção de `Procurador`; a confirmação de sucesso continua sendo feita somente depois, pelo CNPJ e pelo `Resultado da Análise` exibidos pelo portal.
+- a primeira empresa é representada corretamente;
+- qualquer desafio de segurança é resolvido manualmente e a execução continua;
+- a primeira empresa tem resultado confirmado pelo próprio CNPJ exibido;
+- há pelo menos 40 segundos entre a primeira ação de representação e a tentativa da segunda;
+- a segunda empresa recebe exatamente o mesmo fluxo de representação já estabilizado;
+- o CNPJ exibido no segundo `Resultado da Análise` corresponde ao segundo CNPJ da fila;
+- o retorno `Com pendência` ou `Sem pendência` é associado à linha correta;
+- quando houver pendências, o relatório é realmente baixado e o caminho gravado;
+- nenhuma falha genérica é classificada como `Sem procuração ativa`.
 
-Se a fila tiver zero ou mais de uma empresa, o modo de validação deve impedir a execução e registrar `ERRO_FATAL` no progresso.
-
-## 3. Critérios de aprovação
-
-O primeiro teste só é considerado aprovado se todos os itens abaixo forem confirmados:
-
-- a representação mudou para o CNPJ solicitado;
-- o CNPJ exibido em `Resultado da Análise` corresponde ao solicitado;
-- o retorno `Com pendência` ou `Sem pendência` foi identificado corretamente;
-- o resultado foi importado na linha correta do Excel;
-- quando houver pendências, o relatório foi realmente baixado;
-- o caminho do relatório foi gravado no resultado;
-- nenhum segundo CNPJ foi processado;
-- nenhuma falha genérica foi classificada como `Sem procuração ativa`.
-
-## 4. Arquivos para diagnóstico
+## Arquivos para diagnóstico
 
 Na pasta da execução, preservar para análise local:
 
@@ -90,9 +96,9 @@ relatorios\
 
 Não publicar esses arquivos no GitHub sem sanitização, pois podem conter dados empresariais.
 
-## 5. Depois da validação
+## Depois da validação
 
-Somente depois do primeiro teste aprovado, remova o bloqueio de uma empresa:
+Somente depois do teste de duas empresas aprovado, remova o bloqueio de validação:
 
 ```powershell
 Set-Location "C:\Users\Cezar.CONTALEX\Desktop\GitHub\Pendências Fiscais Receita"
@@ -101,4 +107,4 @@ PowerShell -ExecutionPolicy Bypass -File ".\scripts\desativar-modo-validacao.ps1
   -WorkbookPath "C:\CAMINHO\DA\COPIA\Controle_Folha_Cezar_Prototipo_Pendencias_v1.xlsm"
 ```
 
-A remoção do marcador apenas libera filas maiores; não altera a lógica de segurança de confirmação do CNPJ, o intervalo de 40 segundos ou a interrupção fail-closed.
+A remoção do marcador libera filas maiores; não altera a lógica de confirmação do CNPJ, o intervalo de 40 segundos nem a interrupção fail-closed.
