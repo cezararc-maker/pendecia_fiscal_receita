@@ -90,10 +90,22 @@ def test_result_store_preserves_legacy_tsv_contract(tmp_path):
             "detalhes": "Relatório não necessário: resultado sem pendências.",
         }
     )
+
+    raw_bytes = queue.paths.result_tsv_path.read_bytes()
+    assert raw_bytes.startswith(b"\xef\xbb\xbf")
+    assert b"\r\r\n" not in raw_bytes
+    assert b"\r\n" in raw_bytes
+
     raw = queue.paths.result_tsv_path.read_text(encoding="utf-8-sig")
     lines = raw.splitlines()
     assert lines[0] == "codigo\tnome\tdataHora\tstatus\tresultado\trelatorio\tquantidade\tcompetencias\tdetalhes"
-    assert lines[1].split("\t")[:5] == ["1", "EMPRESA TESTE", "11/09/2026 21:00:00", "Concluido", "Sem pendencias"]
+    assert lines[1].split("\t")[:5] == [
+        "1",
+        "EMPRESA TESTE",
+        "11/09/2026 21:00:00",
+        "Concluido",
+        "Sem pendencias",
+    ]
 
 
 class FakeKeyboard:
