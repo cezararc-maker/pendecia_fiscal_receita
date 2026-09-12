@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
-import json
 from pathlib import Path
 from time import monotonic
 from typing import Any
@@ -11,11 +11,22 @@ from .models import digits_only
 from .worker_common import QueueCompany, clean, format_duration
 
 RESULT_HEADERS = (
-    "codigo", "nome", "dataHora", "status", "resultado", "relatorio",
-    "quantidade", "competencias", "detalhes",
+    "codigo",
+    "nome",
+    "dataHora",
+    "status",
+    "resultado",
+    "relatorio",
+    "quantidade",
+    "competencias",
+    "detalhes",
 )
 TERMINAL_STATUSES = {
-    "CONCLUIDO", "CONCLUIDO_COM_ERROS", "ERRO_FATAL", "CANCELADO", "PORTAL_INSTAVEL",
+    "CONCLUIDO",
+    "CONCLUIDO_COM_ERROS",
+    "ERRO_FATAL",
+    "CANCELADO",
+    "PORTAL_INSTAVEL",
 }
 
 
@@ -91,7 +102,10 @@ def load_queue(path: Path) -> QueueInput:
 def atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(path.name + ".tmp")
-    temp.write_text(text, encoding="utf-8")
+    # newline="" evita que o Windows converta novamente \n em \r\n quando o texto já
+    # contém quebras CRLF explícitas. Sem isso, um "\r\n" pode virar "\r\r\n" e
+    # introduzir linhas vazias no TSV consumido pelo VBA.
+    temp.write_text(text, encoding="utf-8", newline="")
     temp.replace(path)
 
 
@@ -102,12 +116,23 @@ class ProgressState:
         self.paused_total = 0.0
         self.pause_started_at: float | None = None
         self.data: dict[str, Any] = {
-            "status": "INICIANDO", "percent": 0, "currentCode": "", "currentName": "",
-            "stage": "Conectando ao navegador", "completed": 0, "total": len(queue.companies),
-            "successful": 0, "withoutAuthorization": 0, "errors": 0,
-            "manualSkipped": queue.manual_skipped, "message": "", "elapsedSeconds": 0,
-            "elapsedTime": "00:00:00", "estimatedSecondsRemaining": 0,
-            "estimatedRemaining": "Calculando...", "phase": 0.0,
+            "status": "INICIANDO",
+            "percent": 0,
+            "currentCode": "",
+            "currentName": "",
+            "stage": "Conectando ao navegador",
+            "completed": 0,
+            "total": len(queue.companies),
+            "successful": 0,
+            "withoutAuthorization": 0,
+            "errors": 0,
+            "manualSkipped": queue.manual_skipped,
+            "message": "",
+            "elapsedSeconds": 0,
+            "elapsedTime": "00:00:00",
+            "estimatedSecondsRemaining": 0,
+            "estimatedRemaining": "Calculando...",
+            "phase": 0.0,
         }
 
     def _recalculate(self) -> None:
