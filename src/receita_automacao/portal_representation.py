@@ -348,8 +348,10 @@ async def wait_confirmed_analysis(
     progress: Any,
     logger: EventLogger,
     company: QueueCompany,
+    *,
+    timeout_seconds: int = 90,
 ) -> tuple[str, str]:
-    deadline = monotonic() + 90
+    deadline = monotonic() + timeout_seconds
     while monotonic() < deadline:
         await wait_human_security_challenge(page, progress)
         if await explicit_no_authorization_visible(page):
@@ -382,6 +384,6 @@ async def wait_confirmed_analysis(
         "confirm_representation",
         (
             "Representar foi acionado, mas o Resultado da Análise não confirmou o CNPJ "
-            "solicitado e o resultado correspondente dentro de 90 segundos."
+            f"solicitado e o resultado correspondente dentro de {timeout_seconds} segundos."
         ),
     )
