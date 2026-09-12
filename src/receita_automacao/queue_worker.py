@@ -27,6 +27,7 @@ from .portal_representation import (
     find_receita_page,
     open_representation_menu,
     select_procurador_and_submit,
+    select_procurador_for_diagnostic,
     validate_representation_form,
     wait_confirmed_analysis,
 )
@@ -45,10 +46,15 @@ from .worker_common import (
     local_timestamp,
 )
 
+DIAGNOSTIC_STAGES = ("normal", "after-cnpj", "after-procurador")
+
 
 class ReceitaQueueWorker:
-    def __init__(self, queue: QueueInput):
+    def __init__(self, queue: QueueInput, *, diagnostic_stage: str = "normal"):
+        if diagnostic_stage not in DIAGNOSTIC_STAGES:
+            raise ValueError(f"Etapa diagnóstica inválida: {diagnostic_stage}")
         self.queue = queue
+        self.diagnostic_stage = diagnostic_stage
         self.progress = ProgressState(queue)
         self.results = ResultStore(queue)
         self.logger = EventLogger(queue.paths.event_log)
@@ -79,6 +85,12 @@ class ReceitaQueueWorker:
                     await self.page.goto(PORTAL_URL, wait_until="domcontentloaded")
                 await ensure_authenticated(self.page)
                 await wait_human_security_challenge(self.page, self.progress)
+                if self.diagnostic_stage != "normal":
+                    self.logger.emit(
+                        "diagnostic_mode_started",
+                        stage=self.diagnostic_stage,
+                        mode=self.diagnostic_stage,
+                    )
                 return await self._run_companies()
         except WorkerError as exc:
             self.progress.data["errors"] = int(self.progress.data.get("errors", 0)) + 1
@@ -145,6 +157,7 @@ class ReceitaQueueWorker:
                 identifier=company.identificador,
                 stage="start",
                 code=company.codigo,
+                diagnostic_stage=self.diagnostic_stage,
             )
 
             fatal = False
@@ -161,6 +174,7 @@ class ReceitaQueueWorker:
                     code=company.codigo,
                     duration_seconds=round(monotonic() - started, 3),
                     result=result.get("resultado", ""),
+                    diagnostic_stage=self.diagnostic_stage,
                 )
             except PortalUnstableError as exc:
                 consecutive_instability += 1
@@ -242,32 +256,77 @@ class ReceitaQueueWorker:
             await field.fill("")
             await field.press_sequentially(company.identificador, delay=90)
 
+        diagnostic_timeout = 300 if self.diagnostic_stage != "normal" else 90
+
         if await visible_text(self.page, ALREADY_ACTIVE_RE):
             await close_representation_menu(self.page)
         else:
             form = await validate_representation_form(self.page, field, company)
-            await select_procurador_and_submit(self.page, form, company, self.logger)
-            self.last_representation_at = monotonic()
-            self.progress.update(
-                stage="Sequência Tab, Tab e Espaço enviada",
-                phase=0.4,
-                message=(
-                    "Aguardando confirmação da representação para "
-                    f"{format_cnpj(company.identificador)}."
-                ),
-            )
-            await handle_post_submit_confirmation(
-                self.page,
-                self.progress,
-                self.logger,
-                company,
-            )
+
+            if self.diagnostic_stage == "after-cnpj":
+                self.progress.update(
+                    status="AGUARDANDO_DIAGNOSTICO",
+                    stage="Diagnóstico: CNPJ preenchido",
+                    phase=0.3,
+                    message=(
+                        "Conclua manualmente no navegador: selecione Procurador e acione Representar. "
+                        "Se surgir validação visual, resolva-a manualmente."
+                    ),
+                )
+                self.logger.emit(
+                    "diagnostic_checkpoint_after_cnpj",
+                    company=company.nome,
+                    identifier=company.identificador,
+                    stage="diagnostic_after_cnpj",
+                    code=company.codigo,
+                )
+            elif self.diagnostic_stage == "after-procurador":
+                await select_procurador_for_diagnostic(
+                    self.page,
+                    form,
+                    company,
+                    self.logger,
+                )
+                self.progress.update(
+                    status="AGUARDANDO_DIAGNOSTICO",
+                    stage="Diagnóstico: Procurador selecionado",
+                    phase=0.35,
+                    message=(
+                        "O Python parou antes do envio. Clique manualmente em Representar. "
+                        "Se surgir validação visual, resolva-a manualmente."
+                    ),
+                )
+                self.logger.emit(
+                    "diagnostic_checkpoint_after_procurador",
+                    company=company.nome,
+                    identifier=company.identificador,
+                    stage="diagnostic_after_procurador",
+                    code=company.codigo,
+                )
+            else:
+                await select_procurador_and_submit(self.page, form, company, self.logger)
+                self.last_representation_at = monotonic()
+                self.progress.update(
+                    stage="Sequência Tab, Tab e Espaço enviada",
+                    phase=0.4,
+                    message=(
+                        "Aguardando confirmação da representação para "
+                        f"{format_cnpj(company.identificador)}."
+                    ),
+                )
+                await handle_post_submit_confirmation(
+                    self.page,
+                    self.progress,
+                    self.logger,
+                    company,
+                )
 
         result_status, main_text = await wait_confirmed_analysis(
             self.page,
             self.progress,
             self.logger,
             company,
+            timeout_seconds=diagnostic_timeout,
         )
         await close_representation_menu(self.page)
 
@@ -354,6 +413,7 @@ class ReceitaQueueWorker:
             error_code=exc.code,
             error_original=original or str(exc),
             evidence_path=evidence,
+            diagnostic_stage=self.diagnostic_stage,
         )
 
     async def _wait_if_paused(self) -> None:
@@ -432,21 +492,32 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Caminho para fila.json criada pelo Excel",
     )
+    parser.add_argument(
+        "--diagnostic-stage",
+        choices=DIAGNOSTIC_STAGES,
+        default="normal",
+        help=(
+            "Diagnóstico controlado: after-cnpj para parar após preencher o CNPJ; "
+            "after-procurador para parar após selecionar Procurador; normal para fluxo completo."
+        ),
+    )
     return parser
 
 
-async def async_main(queue_path: Path) -> int:
+async def async_main(queue_path: Path, *, diagnostic_stage: str = "normal") -> int:
     try:
         queue = load_queue(queue_path)
     except Exception as exc:
         print(f"Fila inválida: {exc}", file=sys.stderr)
         return 2
-    return await ReceitaQueueWorker(queue).run()
+    return await ReceitaQueueWorker(queue, diagnostic_stage=diagnostic_stage).run()
 
 
 def main() -> None:
     args = build_parser().parse_args()
-    raise SystemExit(asyncio.run(async_main(args.queue)))
+    raise SystemExit(
+        asyncio.run(async_main(args.queue, diagnostic_stage=args.diagnostic_stage))
+    )
 
 
 if __name__ == "__main__":
