@@ -4,11 +4,31 @@ from pathlib import Path
 from typing import Any
 
 from .config import ExcelConfig
-from .models import CompanyRecord, digits_only, parse_entity_type
+from .models import CompanyRecord, EntityType, digits_only, parse_entity_type
 
 
 class ExcelIntegrationError(RuntimeError):
     pass
+
+
+def normalize_excel_identifier(text: object, value: object, entity_type: EntityType) -> str:
+    expected_length = {
+        EntityType.CNPJ: 14,
+        EntityType.CPF: 11,
+        EntityType.CAEPF: 14,
+    }.get(entity_type)
+
+    displayed = digits_only(text)
+    if expected_length is None or len(displayed) == expected_length:
+        return displayed
+
+    if isinstance(value, (int, float)):
+        numeric = float(value)
+        if numeric.is_integer():
+            return str(int(numeric)).zfill(expected_length)
+
+    raw = digits_only(value)
+    return raw.zfill(expected_length) if raw and len(raw) < expected_length else raw
 
 
 class ExcelGateway:
@@ -108,7 +128,7 @@ class ExcelGateway:
 
             entity_type = parse_entity_type(self.sheet.Cells(row, self.headers[self.config.entity_type_header]).Value)
             identifier_cell = self.sheet.Cells(row, self.headers[self.config.identifier_header])
-            identifier = digits_only(identifier_cell.Text)
+            identifier = normalize_excel_identifier(identifier_cell.Text, identifier_cell.Value2, entity_type)
             company_name = str(self.sheet.Cells(row, self.headers[self.config.company_name_header]).Value or "").strip()
             previous_status = str(self.sheet.Cells(row, self.headers[self.config.status_header]).Value or "").strip()
             source_key = f"{self.config.workbook_path.resolve()}|{self.config.sheet_name}|{row}|{identifier}"

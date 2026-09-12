@@ -14,12 +14,41 @@ from .models import CompanyRecord, PortalResult, PortalResultStatus, digits_only
 
 CNPJ_TEXT_RE = re.compile(r"(?<!\d)(\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2})(?!\d)")
 
+ADDITIONAL_CONFIRMATION_MARKERS = (
+    "confirmação adicional",
+    "confirme a operação",
+    "confirmar acesso",
+    "autorizar acesso",
+    "autorize o acesso",
+)
+
+SECURITY_CHALLENGE_MARKERS = (
+    "captcha",
+    "código de verificação",
+    "verificação em duas etapas",
+    "desafio de segurança",
+    "confirme sua identidade",
+    "selecione um certificado",
+)
+
 
 class PortalStageError(RuntimeError):
     def __init__(self, code: str, stage: str, message: str):
         super().__init__(message)
         self.code = code
         self.stage = stage
+
+
+def classify_manual_gate(url: str, body_text: str) -> str | None:
+    """Classify a manual gate without logging page contents or sensitive data."""
+    normalized = body_text.casefold()
+    if any(marker in normalized for marker in SECURITY_CHALLENGE_MARKERS):
+        return "security_challenge"
+    if any(marker in normalized for marker in ADDITIONAL_CONFIRMATION_MARKERS):
+        return "additional_confirmation"
+    if "/login/" in url.casefold() or "entre com sua conta gov.br" in normalized:
+        return "login"
+    return None
 
 
 async def _click_option_and_submit(page: Any, procurador_option: Any) -> None:
@@ -72,19 +101,44 @@ class ReceitaPortalClient:
     async def wait_for_manual_authentication(self) -> None:
         assert self.page is not None
         started = monotonic()
-        announced = False
+        last_gate: str | None = None
+        event_names = {
+            "login": "portal_login_required",
+            "additional_confirmation": "portal_additional_confirmation_required",
+            "security_challenge": "portal_security_challenge_required",
+        }
+
         while monotonic() - started < self.config.manual_login_timeout_seconds:
+            try:
+                body_text = await self.page.locator("body").inner_text(timeout=1500)
+            except Exception:
+                body_text = ""
+
+            gate = classify_manual_gate(self.page.url, body_text)
+            if gate is not None:
+                if gate != last_gate:
+                    self.logger.emit(
+                        event_names[gate],
+                        stage=gate,
+                        detail="Intervenção manual necessária no navegador aberto pela automação.",
+                    )
+                last_gate = gate
+                await self.page.wait_for_timeout(1000)
+                continue
+
             url = self.page.url.lower()
             if "/servico/pendencias/" in url and "/login/" not in url:
                 return
-            if not announced:
+
+            if last_gate != "login":
                 self.logger.emit(
-                    "manual_authentication_required",
+                    "portal_login_required",
                     stage="login",
-                    detail="Faça login/certificado/desafio no navegador aberto pela automação.",
+                    detail="Aguardando autenticação manual e redirecionamento ao serviço.",
                 )
-                announced = True
+                last_gate = "login"
             await self.page.wait_for_timeout(1000)
+
         raise PortalStageError(
             "login_timeout",
             "login",
@@ -166,14 +220,22 @@ class ReceitaPortalClient:
                 "find_submit",
                 f"Esperado 1 botão submit Representar visível; encontrados {count}.",
             )
+
         form = submit.locator("xpath=ancestor::form[1]")
-        if await form.count() != 1:
-            raise PortalStageError(
-                "representation_form_not_found",
-                "find_submit",
-                "O botão submit correto foi encontrado, mas não foi possível delimitar seu formulário.",
-            )
-        return form
+        if await form.count() == 1:
+            return form
+
+        scope = submit.locator(
+            "xpath=ancestor::*[.//input[@placeholder='Digite o CPF ou CNPJ']][1]"
+        )
+        if await scope.count() == 1:
+            return scope
+
+        raise PortalStageError(
+            "representation_form_not_found",
+            "find_submit",
+            "O botão submit correto foi encontrado, mas não foi possível delimitar o formulário/contêiner do CNPJ.",
+        )
 
     async def _fill_cnpj(self, form: Locator, company: CompanyRecord) -> None:
         field = form.locator(self.config.cnpj_input_selector)
@@ -273,7 +335,7 @@ class ReceitaPortalClient:
         scopes: list[Locator] = []
         if self.config.identity_scope_selector:
             candidate = self.page.locator(self.config.identity_scope_selector)
-            if await self._visible_count(candidate) == 1:
+            if await self._visible_count(candidate) == 1 and await self._safe_identity_scope(candidate):
                 scopes.append(candidate)
         else:
             headings = self.page.get_by_text(re.compile(r"Dados\s+cadastrais", re.IGNORECASE), exact=False)
@@ -288,9 +350,11 @@ class ReceitaPortalClient:
                         text = await current.inner_text(timeout=1000)
                     except Exception:
                         continue
-                    if "CNPJ" in text.upper() and CNPJ_TEXT_RE.search(text):
+                    if "CNPJ" not in text.upper() or not CNPJ_TEXT_RE.search(text):
+                        continue
+                    if await self._safe_identity_scope(current):
                         scopes.append(current)
-                        break
+                    break
 
         for scope in scopes:
             try:
@@ -303,6 +367,14 @@ class ReceitaPortalClient:
                 if len(value) == 14:
                     return value
         return None
+
+    async def _safe_identity_scope(self, scope: Locator) -> bool:
+        """Reject scopes that also contain the representation form/recent-input region."""
+        if await scope.locator(self.config.cnpj_input_selector).count() > 0:
+            return False
+        if await scope.locator(self.config.submit_selector).count() > 0:
+            return False
+        return True
 
     async def _wait_analysis_result(self, company: CompanyRecord) -> PortalResultStatus:
         assert self.page is not None
