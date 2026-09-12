@@ -30,21 +30,36 @@ if ($type -ne 'RECEITA') {
 
 if (Test-Path -LiteralPath $validationMarker) {
     $companies = @($queue.empresas)
-    if ($companies.Count -ne 1) {
+    $validationCount = 1
+    try {
+        $markerText = Get-Content -LiteralPath $validationMarker -Raw
+        if ($markerText -match '(?im)^EMPRESAS=(\d+)\s*$') {
+            $validationCount = [int]$Matches[1]
+        }
+    } catch {
+        $validationCount = 1
+    }
+
+    if ($validationCount -lt 1) {
+        $validationCount = 1
+    }
+
+    if ($companies.Count -ne $validationCount) {
         Write-FatalProgress `
             'Modo de validacao: fila bloqueada' `
-            "O primeiro teste permite exatamente 1 empresa. A fila atual contem $($companies.Count). Selecione somente um CNPJ e tente novamente."
+            "O teste controlado permite exatamente $validationCount empresa(s). A fila atual contem $($companies.Count). Ajuste a selecao e tente novamente."
         exit 6
     }
 
-    $onlyCompany = $companies[0]
-    $identifierType = ([string]$onlyCompany.tipoIdentificador).ToUpperInvariant()
-    $identifier = ([string]$onlyCompany.identificador) -replace '\D', ''
-    if ($identifierType -ne 'CNPJ' -or $identifier.Length -ne 14) {
-        Write-FatalProgress `
-            'Modo de validacao: empresa nao elegivel' `
-            'O primeiro teste permite somente uma empresa identificada como CNPJ com 14 digitos.'
-        exit 7
+    foreach ($company in $companies) {
+        $identifierType = ([string]$company.tipoIdentificador).ToUpperInvariant()
+        $identifier = ([string]$company.identificador) -replace '\D', ''
+        if ($identifierType -ne 'CNPJ' -or $identifier.Length -ne 14) {
+            Write-FatalProgress `
+                'Modo de validacao: empresa nao elegivel' `
+                "Todas as $validationCount empresas do teste devem ser CNPJs com 14 digitos."
+            exit 7
+        }
     }
 }
 
