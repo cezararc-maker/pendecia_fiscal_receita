@@ -18,14 +18,17 @@ from .portal_gates import (
 from .worker_common import (
     ANALYSIS_HEADING_RE,
     CNPJ_INPUT_SELECTOR,
-    COMBO_SELECTOR,
     PORTAL_HOST,
     PORTAL_URL,
     PROFILE_BUTTON_SELECTOR,
+    PROFILE_OPTION_SELECTOR,
+    PROFILE_PLACEHOLDER_SELECTOR,
+    PROFILE_PLACEHOLDER_TEXT,
     QueueCompany,
     RepresentationSafetyError,
     SUBMIT_SELECTOR,
     WorkerError,
+    clean,
     parse_analysis_result,
 )
 
@@ -193,19 +196,47 @@ async def critical_submit_sequence(page: Any, procurador_option: Locator) -> Non
     await page.keyboard.press("Space")
 
 
+async def _matching_profile_placeholders(form: Locator) -> list[Locator]:
+    matches: list[Locator] = []
+    for placeholder in await visible_items(form.locator(PROFILE_PLACEHOLDER_SELECTOR)):
+        try:
+            text = clean(await placeholder.inner_text())
+        except Exception:
+            continue
+        if text == PROFILE_PLACEHOLDER_TEXT:
+            matches.append(placeholder)
+    return matches
+
+
+async def _matching_procurador_options(page: Page) -> list[Locator]:
+    matches: list[Locator] = []
+    for option in await visible_items(page.locator(PROFILE_OPTION_SELECTOR)):
+        try:
+            text = clean(await option.inner_text())
+        except Exception:
+            continue
+        if text == "Procurador":
+            matches.append(option)
+    return matches
+
+
 async def select_procurador_and_submit(
     page: Page,
     form: Locator,
     company: QueueCompany,
     logger: EventLogger,
 ) -> None:
-    combos = await visible_items(form.locator(COMBO_SELECTOR))
-    if len(combos) != 1:
+    placeholders = await _matching_profile_placeholders(form)
+    if len(placeholders) != 1:
         raise WorkerError(
             "procurador_field_not_found",
             "select_procurador",
-            f"Esperado 1 campo interno do perfil no formulário; encontrados {len(combos)}.",
+            (
+                "Esperado 1 campo 'Digite um perfil de representação' visível no formulário; "
+                f"encontrados {len(placeholders)}."
+            ),
         )
+
     logger.emit(
         "before_procurador_selection",
         company=company.nome,
@@ -213,16 +244,20 @@ async def select_procurador_and_submit(
         stage="select_procurador",
         code=company.codigo,
     )
+
     try:
-        await combos[0].scroll_into_view_if_needed()
-        await combos[0].click()
-        options = await visible_items(page.get_by_role("option", name="Procurador", exact=True))
+        # O input interno do ng-select pode ter área clicável mínima e provocar tentativas de
+        # rolagem do Playwright. O portal expõe um placeholder visível e estável; clicamos nele.
+        await placeholders[0].click()
+        options = await _matching_procurador_options(page)
         if len(options) != 1:
             raise WorkerError(
                 "procurador_option_not_unique",
                 "select_procurador",
                 f"Esperada 1 opção Procurador visível; encontradas {len(options)}.",
             )
+
+        # Nenhuma leitura, log, refocus ou outra operação pode entrar dentro desta sequência.
         await critical_submit_sequence(page, options[0])
     except WorkerError:
         raise
