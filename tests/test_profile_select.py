@@ -1,6 +1,9 @@
 import pytest
 
-from receita_automacao.portal_representation import select_procurador_and_submit
+from receita_automacao.portal_representation import (
+    select_procurador_and_submit,
+    select_procurador_for_diagnostic,
+)
 from receita_automacao.worker_common import (
     PROFILE_ARROW_SELECTOR,
     PROFILE_OPTION_SELECTOR,
@@ -191,4 +194,22 @@ async def test_profile_placeholder_is_safe_fallback_when_arrow_click_fails():
         ("press", "Tab"),
         ("wait", 300),
         ("press", "Space"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_diagnostic_selects_procurador_but_does_not_submit():
+    events = []
+    arrow = FakeArrow(events)
+    ng_select = FakeNgSelect(arrow)
+    placeholder = FakePlaceholder("Digite um perfil de representação", events, ng_select)
+    option = FakeClickableText("Procurador", "option_click", events)
+    form = FakeForm(placeholder)
+    page = FakePage(option, events)
+
+    await select_procurador_for_diagnostic(page, form, make_company(), FakeLogger())
+
+    assert events == [
+        ("arrow_click", "ng-arrow-wrapper"),
+        ("option_click", "Procurador"),
     ]
