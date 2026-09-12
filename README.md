@@ -23,6 +23,7 @@ A planilha real não deve ser versionada.
 - Python 3.11+ com Playwright assíncrono.
 - Fila apenas para registros explicitamente identificados como `CNPJ`; CPF e CAEPF são ignorados pela automação.
 - Validação dos dígitos verificadores do CNPJ antes de entrar na fila.
+- Leitura do identificador no Excel preservando formatação/zeros à esquerda e com fallback para valor numérico quando a célula aparece em notação científica.
 - Integração Excel via **COM/pywin32**, sem regravar a `.xlsm` por bibliotecas que possam remover VBA, botões ou recursos do arquivo.
 - Estado persistente local em SQLite, inclusive resultados concluídos ainda não sincronizados com o Excel.
 - Comandos `pause`, `resume`, `stop` e `status`; pausa/interrupção ocorrem em ponto seguro antes da próxima empresa.
@@ -32,18 +33,20 @@ A planilha real não deve ser versionada.
 - Sequência crítica de Procurador: clique na opção → `Tab` → 300 ms → `Tab` → 300 ms → `Space`, sem `focus()`, `evaluate()` ou diagnóstico entre as ações.
 - Nenhum segundo clique cego no botão depois da sequência de teclado.
 - Confirmação separada da ação: só aceita a representação após ler o CNPJ na área de **Dados cadastrais** e compará-lo ao solicitado.
+- O fallback de “Dados cadastrais” rejeita contêineres que também contenham o campo/botão do formulário de representação, reduzindo o risco de aceitar CNPJ do campo de entrada ou de regiões de representação.
 - Se aparecer outro CNPJ ou não houver confirmação, o processamento é interrompido para evitar atribuir dados à empresa errada.
 - Resultado só é aceito quando aparece marcador explícito de “sem pendências” ou “com pendências”.
 - Quando há pendências, o processamento só conclui se o relatório for efetivamente baixado e o caminho local for registrado.
 - Logs JSONL locais com horário, empresa, etapa, duração, código de erro e erro original; screenshots de falha ficam apenas em `.runtime/evidence`.
-- CI limitada a testes unitários/estáticos, sem instalar navegador e sem acessar o Portal da Receita.
+- Diagnóstico separado para login, confirmação adicional e desafio de segurança, sem gravar o conteúdo da página nos logs.
+- Workflow de CI configurado apenas para testes unitários/estáticos, sem instalar navegador e sem acessar o Portal da Receita.
 
 ## O que ainda depende do protótipo/validação local
 
 Três seletores não devem ser inventados sem observar o portal autenticado real:
 
 - `sidebar_toggle_selector`: controle no cabeçalho que abre a barra lateral de representação;
-- `identity_scope_selector`: opcional, para tornar ainda mais precisa a área de dados cadastrais (há fallback por título “Dados cadastrais”);
+- `identity_scope_selector`: opcional, para tornar ainda mais precisa a área de dados cadastrais (há fallback conservador por título “Dados cadastrais”);
 - `report_download_selector`: botão/link exato do relatório (há fallback conservador por nome acessível).
 
 Os textos reais que identificam “com pendências” e “sem pendências” também precisam ser confirmados numa execução controlada.
@@ -81,8 +84,11 @@ python -m receita_automacao --config config.local.toml probe
 
 Os diagnósticos distinguem, entre outros:
 
+- portal aguardando login;
+- portal solicitando confirmação adicional;
+- portal solicitando desafio de segurança/verificação;
 - campo CNPJ não encontrado;
-- seletor/ opção Procurador não localizada de forma única;
+- seletor/opção Procurador não localizada de forma única;
 - sequência de teclas enviada;
 - Representar acionado, mas CNPJ cadastral não confirmado;
 - CNPJ cadastral diferente do solicitado;
@@ -120,14 +126,16 @@ pytest -q
 ruff check src tests
 ```
 
-Os testes atuais cobrem validação de CNPJ, exclusão de CAEPF da fila automática, persistência de resultados/controle e, principalmente, a ordem exata da sequência `Procurador → Tab → 300 ms → Tab → 300 ms → Space`.
+Os testes versionados cobrem validação de CNPJ, exclusão de CAEPF da fila automática, persistência de resultados/controle, normalização do identificador lido do Excel, classificação de login/confirmação/desafio e, principalmente, a ordem exata da sequência `Procurador → Tab → 300 ms → Tab → 300 ms → Space`.
+
+**Status de execução em 11/09/2026:** o workflow foi criado no PR, mas a conexão do GitHub ainda não reportou nenhuma execução/check para os commits da branch. Uma tentativa de clonar a branch em ambiente isolado também não pôde acessar `github.com`. Portanto, estes testes estão **implementados e versionados**, mas não estão sendo declarados como “passaram” até existir uma execução confirmada.
 
 ## O que significa “validado” neste projeto
 
 Há três níveis distintos:
 
 1. **Implementado:** código existe e está versionado.
-2. **Testado automaticamente:** comportamento isolado foi exercitado por testes sem acesso ao portal.
+2. **Testado automaticamente:** comportamento isolado foi de fato executado por testes sem acesso ao portal.
 3. **Validado no portal:** somente após execução local, com navegador autenticado, confirmação da troca real de CNPJ e carregamento do resultado fiscal.
 
-Esta primeira versão **não deve ser considerada validada no portal** até o teste local controlado com uma empresa.
+Esta primeira versão está no nível **Implementado**. Ela **não** deve ser considerada “testada automaticamente” nem “validada no portal” até termos evidência dessas execuções.
