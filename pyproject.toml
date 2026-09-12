@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "receita-pendencias"
+version = "0.2.0"
+description = "Automação local de consulta de pendências fiscais no Portal de Serviços da Receita Federal"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "playwright>=1.55,<2",
+  "pywin32>=306; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.24,<1",
+  "ruff>=0.9,<1",
+]
+
+[project.scripts]
+receita-pendencias = "receita_automacao.cli:main"
+receita-pendencias-worker = "receita_automacao.queue_worker:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
