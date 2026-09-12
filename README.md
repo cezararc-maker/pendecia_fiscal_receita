@@ -1,141 +1,167 @@
 # pendecia_fiscal_receita
 
-Automação **local** em Python + Playwright para consultar, uma empresa por vez, pendências fiscais no Portal de Serviços da Receita Federal, preservando a integração com uma planilha Excel `.xlsm`.
+Automação local em **Python + Playwright** para consultar pendências fiscais no Portal de Serviços da Receita Federal, preservando a integração já existente com a planilha Excel `.xlsm`.
 
-> O código fica no GitHub. A execução autenticada fica exclusivamente no Windows do usuário. Certificados, senhas, PINs, cookies/sessões, planilhas reais, relatórios fiscais e evidências autenticadas **não** devem ser enviados ao repositório.
+O código fica no GitHub. A execução autenticada ocorre somente no Windows do usuário. Certificados, senhas, PINs, perfil do navegador, sessões, planilhas reais e relatórios fiscais não devem ser versionados.
 
-## Estado atual
+## Estado da migração
 
-O repositório estava completamente vazio em 11/09/2026. Esta branch cria a primeira base Python a partir dos requisitos funcionais fornecidos. Ainda não foi possível comparar a implementação com o protótipo JavaScript nem validar o mapeamento real da planilha porque esses artefatos não estavam no GitHub.
+O protótipo anterior foi analisado e o contrato Excel <-> automação foi identificado. A estratégia principal agora é **preservar o VBA e os botões existentes** e substituir apenas o processamento da Receita por um worker Python compatível com os arquivos que o Excel já produz.
 
-### Arquivos do protótipo ainda necessários
+A planilha real usada na análise continha dados empresariais e, por isso, não foi adicionada ao repositório.
 
-Disponibilize, sem dados sensíveis:
+Consulte também [`docs/migracao-prototipo.md`](docs/migracao-prototipo.md).
 
-1. o `worker.mjs` usado no protótipo anterior;
-2. o código-fonte anterior da pasta `pendencias-fiscais-prototipo`;
-3. uma cópia **sanitizada** de `Controle_Folha_Cezar_Prototipo_Pendencias_v1.xlsm`, preservando estrutura, nomes de abas, cabeçalhos, fórmulas, VBA e botões, mas removendo empresas, CNPJs, resultados e caminhos reais.
-
-A planilha real não deve ser versionada.
-
-## O que foi implementado nesta primeira migração
+## O que foi implementado
 
 - Python 3.11+ com Playwright assíncrono.
-- Fila apenas para registros explicitamente identificados como `CNPJ`; CPF e CAEPF são ignorados pela automação.
-- Validação dos dígitos verificadores do CNPJ antes de entrar na fila.
-- Leitura do identificador no Excel preservando formatação/zeros à esquerda e com fallback para valor numérico quando a célula aparece em notação científica.
-- Integração Excel via **COM/pywin32**, sem regravar a `.xlsm` por bibliotecas que possam remover VBA, botões ou recursos do arquivo.
-- Estado persistente local em SQLite, inclusive resultados concluídos ainda não sincronizados com o Excel.
-- Comandos `pause`, `resume`, `stop` e `status`; pausa/interrupção ocorrem em ponto seguro antes da próxima empresa.
-- Intervalo mínimo de 40 segundos contado a partir do último envio de representação e aplicado **antes** da próxima empresa.
-- Localizador do campo como `input[...]`, evitando o `br-select` externo.
-- Botão submit delimitado exatamente por `button[type='submit'].br-button.primary.block.margin-5`.
-- Sequência crítica de Procurador: clique na opção → `Tab` → 300 ms → `Tab` → 300 ms → `Space`, sem `focus()`, `evaluate()` ou diagnóstico entre as ações.
-- Nenhum segundo clique cego no botão depois da sequência de teclado.
-- Confirmação separada da ação: só aceita a representação após ler o CNPJ na área de **Dados cadastrais** e compará-lo ao solicitado.
-- O fallback de “Dados cadastrais” rejeita contêineres que também contenham o campo/botão do formulário de representação, reduzindo o risco de aceitar CNPJ do campo de entrada ou de regiões de representação.
-- Se aparecer outro CNPJ ou não houver confirmação, o processamento é interrompido para evitar atribuir dados à empresa errada.
-- Resultado só é aceito quando aparece marcador explícito de “sem pendências” ou “com pendências”.
-- Quando há pendências, o processamento só conclui se o relatório for efetivamente baixado e o caminho local for registrado.
-- Logs JSONL locais com horário, empresa, etapa, duração, código de erro e erro original; screenshots de falha ficam apenas em `.runtime/evidence`.
-- Diagnóstico separado para login, confirmação adicional e desafio de segurança, sem gravar o conteúdo da página nos logs.
-- Workflow de CI configurado apenas para testes unitários/estáticos, sem instalar navegador e sem acessar o Portal da Receita.
+- Conexão ao Chrome já preparado pelo protótipo via CDP (`http://127.0.0.1:9225`).
+- Login, certificado e desafios de segurança permanecem manuais.
+- Leitura direta do `fila.json` criado pelo VBA.
+- Somente CNPJs válidos entram no processamento automático da Receita; CPF e CAEPF ficam manuais.
+- Compatibilidade com `progresso.json`, `progresso.txt`, `resultado.json` e `resultado.tsv`.
+- Preservação dos resultados após cada empresa.
+- Retomada de resultados concluídos quando o mesmo `fila.json` é executado novamente.
+- Pausa por `pausar.flag` e interrupção pelo script já chamado pelo Excel.
+- Intervalo mínimo de 40 segundos antes da próxima representação.
+- Campo interno do CNPJ: `input[placeholder="Digite o CPF ou CNPJ"]`.
+- Submit específico: `button[type="submit"].br-button.primary.block.margin-5`.
+- Perfil `Procurador` delimitado ao mesmo formulário do CNPJ.
+- Sequência crítica exatamente: clique em Procurador -> `Tab` -> 300 ms -> `Tab` -> 300 ms -> `Space`.
+- Nenhum `focus()`, `evaluate()`, leitura do portal ou gravação de arquivo é inserido entre essas teclas.
+- Confirmação da representação separada da ação de envio.
+- Resultado aceito apenas quando o conteúdo principal exibe `Resultado da Análise`, o CNPJ solicitado e um marcador explícito `Com pendência`/`Sem pendência`.
+- Falha de confirmação da representação interrompe o lote (fail-closed).
+- `Sem procuração ativa` somente é usado quando existe mensagem explícita correspondente no portal.
+- Download do relatório com clique normal do Playwright; não usa `force=True` como tentativa cega.
+- Evidências e logs ficam somente na pasta local da execução.
+- Fluxo FGTS continua delegado ao worker Node anterior nesta etapa.
 
-## O que ainda depende do protótipo/validação local
+## Estrutura principal
 
-Três seletores não devem ser inventados sem observar o portal autenticado real:
-
-- `sidebar_toggle_selector`: controle no cabeçalho que abre a barra lateral de representação;
-- `identity_scope_selector`: opcional, para tornar ainda mais precisa a área de dados cadastrais (há fallback conservador por título “Dados cadastrais”);
-- `report_download_selector`: botão/link exato do relatório (há fallback conservador por nome acessível).
-
-Os textos reais que identificam “com pendências” e “sem pendências” também precisam ser confirmados numa execução controlada.
-
-## Instalação no Windows
-
-No PowerShell, dentro do clone do repositório:
-
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -e ".[dev]"
+```text
+src/receita_automacao/
+    queue_worker.py        # worker compatível com a fila do Excel
+    portal.py              # scaffold anterior de acesso direto
+    ...
+integracao_excel/automacao/
+    iniciar-consulta.ps1   # usa Python para RECEITA e mantém Node para FGTS
+    parar-consulta.ps1     # interrompe Python ou Node e preserva contadores
+scripts/
+    preparar-ambiente.ps1
+    instalar-integracao-excel.ps1
+tests/
+    test_queue_worker.py
 ```
 
-Por padrão o exemplo usa o Microsoft Edge (`browser_channel = "msedge"`), portanto não é obrigatório instalar o Chromium do Playwright. Se optar por Chromium, ajuste a configuração e execute `playwright install chromium`.
+## 1. Preparar o ambiente Python
 
-Copie a configuração:
-
-```powershell
-Copy-Item config.example.toml config.local.toml
-```
-
-Edite `config.local.toml` com o caminho da planilha e, após analisarmos a cópia sanitizada, os nomes reais da aba/cabeçalhos. O arquivo local é ignorado pelo Git.
-
-## Diagnóstico antes da primeira empresa
-
-O login, certificado digital e desafios são feitos manualmente por você no navegador aberto pelo Playwright.
+Na pasta local do repositório:
 
 ```powershell
-python -m receita_automacao --config config.local.toml probe
+Set-Location "C:\Users\Cezar.CONTALEX\Desktop\GitHub\Pendências Fiscais Receita"
+PowerShell -ExecutionPolicy Bypass -File ".\scripts\preparar-ambiente.ps1"
 ```
 
-`probe` **não representa nenhuma empresa**. Ele informa apenas quantos elementos relevantes estão visíveis e se os seletores pendentes já foram configurados.
+O script:
 
-Os diagnósticos distinguem, entre outros:
+- cria `.venv`;
+- instala o projeto e dependências;
+- registra `PENDENCIAS_RECEITA_REPO` para a integração Excel;
+- não instala outro navegador, pois o worker conecta ao Chrome do protótipo via CDP.
 
-- portal aguardando login;
-- portal solicitando confirmação adicional;
-- portal solicitando desafio de segurança/verificação;
-- campo CNPJ não encontrado;
-- seletor/opção Procurador não localizada de forma única;
-- sequência de teclas enviada;
-- Representar acionado, mas CNPJ cadastral não confirmado;
-- CNPJ cadastral diferente do solicitado;
-- representação confirmada, porém análise não carregada;
-- controle/erro no download do relatório;
-- tempo excedido aguardando autenticação manual.
+## 2. Instalar a integração no protótipo Excel
 
-## Primeiro teste controlado
+**Não execute esta etapa com uma planilha diferente sem revisar o caminho.** O instalador não modifica células, fórmulas ou VBA. Ele altera apenas os scripts da pasta `Pendencias Fiscais\automacao` ao lado do workbook e cria backup antes.
 
-Somente depois de revisar a planilha sanitizada e completar os seletores pendentes:
+Exemplo:
 
 ```powershell
-python -m receita_automacao --config config.local.toml run --limit 1
+Set-Location "C:\Users\Cezar.CONTALEX\Desktop\GitHub\Pendências Fiscais Receita"
+PowerShell -ExecutionPolicy Bypass -File ".\scripts\instalar-integracao-excel.ps1" `
+  -WorkbookPath "C:\CAMINHO\Controle_Folha_Cezar_Prototipo_Pendencias_v1.xlsm"
 ```
 
-Em outro PowerShell, é possível acompanhar/controlar:
+Durante a instalação:
 
-```powershell
-python -m receita_automacao --config config.local.toml status
-python -m receita_automacao --config config.local.toml pause
-python -m receita_automacao --config config.local.toml resume
-python -m receita_automacao --config config.local.toml stop
+- o `iniciar-consulta.ps1` anterior é preservado como `iniciar-consulta-node.ps1`;
+- RECEITA passa a chamar o worker Python;
+- FGTS continua chamando o script Node original;
+- `parar-consulta.ps1` passa a reconhecer ambos os workers.
+
+## 3. Primeiro teste controlado
+
+Para não alterar lançamentos da planilha de trabalho, faça o primeiro teste em **uma cópia local do workbook**. O fluxo de importação do VBA grava o resultado da empresa consultada quando a execução termina.
+
+1. Abra a cópia de teste da planilha.
+2. Use o botão **Preparar navegador**.
+3. Faça login com certificado manualmente.
+4. Na aba de pendências, selecione **uma única empresa CNPJ**.
+5. Acione a consulta da Receita e escolha **Empresas Selecionadas**.
+6. Acompanhe a barra de progresso da própria planilha.
+7. Se aparecer CAPTCHA/desafio de segurança, resolva manualmente no Chrome.
+8. Se aparecer um diálogo adicional de confirmação de representação, confirme manualmente; o worker aguardará a conclusão e registrará essa etapa.
+
+Não considere a integração validada antes de confirmar no teste real que:
+
+- o CNPJ realmente mudou para a empresa solicitada;
+- `Resultado da Análise` pertence ao mesmo CNPJ;
+- o resultado `Com/Sem pendência` foi importado na linha correta;
+- quando houver pendências, o relatório foi baixado e o caminho foi gravado.
+
+## Diagnóstico local
+
+Cada execução criada pela planilha contém, conforme aplicável:
+
+```text
+fila.json
+progresso.json
+progresso.txt
+resultado.json
+resultado.tsv
+worker-python.stdout.log
+worker-python.stderr.log
+automacao-python.jsonl
+evidencias\
+relatorios\
 ```
 
-Falhas do portal deixam o job em `failed` e interrompem o lote. Depois de analisar/corrigir a causa, uma nova tentativa precisa ser explícita:
+Os diagnósticos distinguem pelo menos:
 
-```powershell
-python -m receita_automacao --config config.local.toml run --limit 1 --retry-failed
-```
+- login necessário;
+- desafio de segurança;
+- campo interno de CNPJ não encontrado;
+- submit Representar ausente, múltiplo ou desabilitado;
+- campo Procurador não localizado;
+- opção Procurador não única;
+- sequência Tab/Tab/Espaço enviada;
+- confirmação adicional do portal;
+- representação não confirmada;
+- CNPJ divergente;
+- resultado não carregado;
+- ausência explícita de procuração;
+- falha/instabilidade no download.
 
 ## Testes automáticos
 
 ```powershell
-pytest -q
-ruff check src tests
+Set-Location "C:\Users\Cezar.CONTALEX\Desktop\GitHub\Pendências Fiscais Receita"
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m ruff check src tests
 ```
 
-Os testes versionados cobrem validação de CNPJ, exclusão de CAEPF da fila automática, persistência de resultados/controle, normalização do identificador lido do Excel, classificação de login/confirmação/desafio e, principalmente, a ordem exata da sequência `Procurador → Tab → 300 ms → Tab → 300 ms → Space`.
+Os testes do worker cobrem, sem acessar o portal:
 
-**Status de execução em 11/09/2026:** o workflow foi criado no PR, mas a conexão do GitHub ainda não reportou nenhuma execução/check para os commits da branch. Uma tentativa de clonar a branch em ambiente isolado também não pôde acessar `github.com`. Portanto, estes testes estão **implementados e versionados**, mas não estão sendo declarados como “passaram” até existir uma execução confirmada.
+- filtragem da fila para CNPJ válido;
+- exigência do CNPJ solicitado no resultado;
+- proibição de classificar erro genérico como ausência de procuração;
+- compatibilidade do TSV com o VBA;
+- ordem exata da sequência `Procurador -> Tab -> 300 ms -> Tab -> 300 ms -> Space`.
 
-## O que significa “validado” neste projeto
+## O que significa "validado"
 
-Há três níveis distintos:
+1. **Implementado:** código versionado no repositório.
+2. **Testado automaticamente:** comportamento isolado exercitado sem portal autenticado.
+3. **Validado no portal:** somente após execução local com o Chrome autenticado e confirmação da troca real do CNPJ.
 
-1. **Implementado:** código existe e está versionado.
-2. **Testado automaticamente:** comportamento isolado foi de fato executado por testes sem acesso ao portal.
-3. **Validado no portal:** somente após execução local, com navegador autenticado, confirmação da troca real de CNPJ e carregamento do resultado fiscal.
-
-Esta primeira versão está no nível **Implementado**. Ela **não** deve ser considerada “testada automaticamente” nem “validada no portal” até termos evidência dessas execuções.
+Nesta etapa, os testes unitários podem validar a lógica isolada. A validação real do portal obrigatoriamente ocorrerá no Windows do usuário.
