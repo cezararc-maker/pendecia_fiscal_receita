@@ -214,10 +214,14 @@ async def _open_profile_select(placeholder: Locator) -> str:
     if await ng_select.count() == 1 and await ng_select.is_visible():
         arrows = await visible_items(ng_select.locator(PROFILE_ARROW_SELECTOR))
         if len(arrows) == 1:
-            await arrows[0].click()
-            return "arrow"
+            try:
+                await arrows[0].click()
+                return "arrow"
+            except Exception:
+                # A seta é a via preferencial, mas o placeholder pertence ao mesmo ng-select e
+                # é um fallback seguro se o componente recusar o clique na seta.
+                pass
 
-    # Fallback seguro: o placeholder é visível no mesmo ng-select identificado pelo texto exato.
     await placeholder.click()
     return "placeholder"
 
@@ -260,8 +264,8 @@ async def select_procurador_and_submit(
     )
 
     try:
-        # Preferimos a seta visível do ng-select; se ela não existir de forma única, usamos
-        # o placeholder exato do mesmo controle. Não clicamos no input interno invisível.
+        # Preferimos a seta visível do ng-select; se ela não existir de forma única ou não aceitar
+        # o clique, usamos o placeholder exato do mesmo controle. Não clicamos no input interno.
         open_method = await _open_profile_select(placeholders[0])
         options = await _matching_procurador_options(page)
         if len(options) != 1:
