@@ -238,12 +238,12 @@ async def _matching_procurador_options(page: Page) -> list[Locator]:
     return matches
 
 
-async def select_procurador_and_submit(
+async def _locate_procurador_option(
     page: Page,
     form: Locator,
     company: QueueCompany,
     logger: EventLogger,
-) -> None:
+) -> Locator:
     placeholders = await _matching_profile_placeholders(form)
     if len(placeholders) != 1:
         raise WorkerError(
@@ -264,8 +264,6 @@ async def select_procurador_and_submit(
     )
 
     try:
-        # Preferimos a seta visível do ng-select; se ela não existir de forma única ou não aceitar
-        # o clique, usamos o placeholder exato do mesmo controle. Não clicamos no input interno.
         open_method = await _open_profile_select(placeholders[0])
         options = await _matching_procurador_options(page)
         if len(options) != 1:
@@ -274,7 +272,6 @@ async def select_procurador_and_submit(
                 "select_procurador",
                 f"Esperada 1 opção Procurador visível; encontradas {len(options)}.",
             )
-
         logger.emit(
             "profile_select_opened",
             company=company.nome,
@@ -283,11 +280,52 @@ async def select_procurador_and_submit(
             code=company.codigo,
             method=open_method,
         )
-
-        # Nenhuma leitura, log, refocus ou outra operação pode entrar dentro desta sequência.
-        await critical_submit_sequence(page, options[0])
+        return options[0]
     except WorkerError:
         raise
+    except Exception as exc:
+        raise WorkerError(
+            "procurador_field_open_failed",
+            "select_procurador",
+            f"Falha ao abrir o campo de perfil ou localizar Procurador: {exc}",
+        ) from exc
+
+
+async def select_procurador_for_diagnostic(
+    page: Page,
+    form: Locator,
+    company: QueueCompany,
+    logger: EventLogger,
+) -> None:
+    """Select Procurador only; used to isolate whether automated submit triggers a challenge."""
+    option = await _locate_procurador_option(page, form, company, logger)
+    try:
+        await option.click()
+    except Exception as exc:
+        raise WorkerError(
+            "procurador_diagnostic_click_failed",
+            "select_procurador",
+            f"Falha ao selecionar Procurador no modo de diagnóstico: {exc}",
+        ) from exc
+    logger.emit(
+        "diagnostic_procurador_selected_without_submit",
+        company=company.nome,
+        identifier=company.identificador,
+        stage="diagnostic_after_procurador",
+        code=company.codigo,
+    )
+
+
+async def select_procurador_and_submit(
+    page: Page,
+    form: Locator,
+    company: QueueCompany,
+    logger: EventLogger,
+) -> None:
+    option = await _locate_procurador_option(page, form, company, logger)
+    try:
+        # Nenhuma leitura, log, refocus ou outra operação pode entrar dentro desta sequência.
+        await critical_submit_sequence(page, option)
     except Exception as exc:
         raise WorkerError(
             "procurador_or_submit_failed",
