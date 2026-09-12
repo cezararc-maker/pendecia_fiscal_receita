@@ -155,12 +155,10 @@ async def validate_representation_form(
             f"Esperado 1 botão submit Representar visível; encontrados {len(submits)}.",
         )
     submit = submits[0]
-    if not await submit.is_enabled():
-        raise WorkerError(
-            "represent_submit_disabled",
-            "find_submit",
-            "O botão submit Representar está visível, mas desabilitado.",
-        )
+
+    # No portal real, Representar fica desabilitado até o perfil Procurador ser escolhido.
+    # Aqui validamos somente a identidade estrutural do submit antes da seleção. Não testamos
+    # is_enabled() nesta etapa porque o estado desabilitado é esperado e correto.
     form = submit.locator("xpath=ancestor::form[1]")
     if await form.count() != 1 or not await form.is_visible():
         raise WorkerError(
