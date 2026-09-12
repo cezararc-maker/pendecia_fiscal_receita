@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "receita-pendencias"
-version = "0.1.0"
+version = "0.2.0"
 description = "Automação local de consulta de pendências fiscais no Portal de Serviços da Receita Federal"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,6 +22,7 @@ dev = [
 
 [project.scripts]
 receita-pendencias = "receita_automacao.cli:main"
+receita-pendencias-worker = "receita_automacao.queue_worker:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
