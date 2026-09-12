@@ -107,7 +107,8 @@ class ExcelGateway:
                 continue
 
             entity_type = parse_entity_type(self.sheet.Cells(row, self.headers[self.config.entity_type_header]).Value)
-            identifier = digits_only(self.sheet.Cells(row, self.headers[self.config.identifier_header]).Value)
+            identifier_cell = self.sheet.Cells(row, self.headers[self.config.identifier_header])
+            identifier = digits_only(identifier_cell.Text)
             company_name = str(self.sheet.Cells(row, self.headers[self.config.company_name_header]).Value or "").strip()
             previous_status = str(self.sheet.Cells(row, self.headers[self.config.status_header]).Value or "").strip()
             source_key = f"{self.config.workbook_path.resolve()}|{self.config.sheet_name}|{row}|{identifier}"
