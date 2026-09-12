@@ -5,6 +5,7 @@ $queue = Get-Content -LiteralPath $QueuePath -Raw | ConvertFrom-Json
 $executionFolder = Split-Path -Parent $QueuePath
 $type = ([string]$queue.tipo).ToUpperInvariant()
 $validationMarker = Join-Path $PSScriptRoot 'modo-validacao-uma-empresa.flag'
+$diagnosticMarker = Join-Path $PSScriptRoot 'diagnostico-receita.flag'
 
 function Write-FatalProgress([string]$Stage, [string]$Message) {
     $state = [ordered]@{
@@ -28,8 +29,44 @@ if ($type -ne 'RECEITA') {
     exit $LASTEXITCODE
 }
 
-if (Test-Path -LiteralPath $validationMarker) {
-    $companies = @($queue.empresas)
+$diagnosticStage = 'normal'
+if (Test-Path -LiteralPath $diagnosticMarker) {
+    try {
+        $candidate = (Get-Content -LiteralPath $diagnosticMarker -Raw).Trim().ToLowerInvariant()
+        if ($candidate -in @('after-cnpj', 'after-procurador')) {
+            $diagnosticStage = $candidate
+        } else {
+            Write-FatalProgress `
+                'Diagnostico invalido' `
+                "O marcador de diagnostico contem '$candidate'. Use after-cnpj ou after-procurador."
+            exit 8
+        }
+    } catch {
+        Write-FatalProgress 'Diagnostico invalido' 'Nao foi possivel ler diagnostico-receita.flag.'
+        exit 8
+    }
+}
+
+$companies = @($queue.empresas)
+
+if ($diagnosticStage -ne 'normal') {
+    if ($companies.Count -ne 1) {
+        Write-FatalProgress `
+            'Diagnostico: fila bloqueada' `
+            "O diagnostico $diagnosticStage exige exatamente 1 empresa CNPJ. A fila atual contem $($companies.Count)."
+        exit 9
+    }
+
+    $diagnosticCompany = $companies[0]
+    $diagnosticType = ([string]$diagnosticCompany.tipoIdentificador).ToUpperInvariant()
+    $diagnosticIdentifier = ([string]$diagnosticCompany.identificador) -replace '\D', ''
+    if ($diagnosticType -ne 'CNPJ' -or $diagnosticIdentifier.Length -ne 14) {
+        Write-FatalProgress `
+            'Diagnostico: empresa nao elegivel' `
+            'O diagnostico exige uma empresa identificada como CNPJ com 14 digitos.'
+        exit 10
+    }
+} elseif (Test-Path -LiteralPath $validationMarker) {
     $validationCount = 1
     try {
         $markerText = Get-Content -LiteralPath $validationMarker -Raw
@@ -82,7 +119,7 @@ if (-not (Test-Path -LiteralPath $python)) {
 
 $stdout = Join-Path $executionFolder 'worker-python.stdout.log'
 $stderr = Join-Path $executionFolder 'worker-python.stderr.log'
-$arguments = '-m receita_automacao.queue_worker --queue "' + $QueuePath + '"'
+$arguments = '-m receita_automacao.queue_worker --queue "' + $QueuePath + '" --diagnostic-stage ' + $diagnosticStage
 $process = Start-Process -FilePath $python -ArgumentList $arguments -WorkingDirectory $repoRoot `
     -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
 $process.Id | Set-Content -LiteralPath (Join-Path $executionFolder 'worker.pid') -Encoding ASCII
