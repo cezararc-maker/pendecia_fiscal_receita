@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local configuration and runtime data
+config.local.toml
+.runtime/
+logs/
+evidence/
+reports/
+*.sqlite3
+*.db
+
+# Sensitive/business files: never version real workbooks/reports
+*.xls
+*.xlsx
+*.xlsm
+*.xlsb
+*.pdf
+
+# Browser/session data
+browser-profile/
+playwright/.auth/
+storage-state*.json
+
+# IDE/OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

@@ -1,0 +1,62 @@
+# Copie para config.local.toml e ajuste SOMENTE no seu Windows.
+# config.local.toml é ignorado pelo Git.
+
+[excel]
+workbook_path = "C:/CAMINHO/Controle_Folha_Cezar_Prototipo_Pendencias_v1.xlsm"
+sheet_name = "PREENCHER_APOS_ANALISE_DA_PLANILHA_SANITIZADA"
+header_row = 1
+selection_header = "Selecionar"
+entity_type_header = "Tipo"
+identifier_header = "CNPJ/CPF/CAEPF"
+company_name_header = "Empresa"
+status_header = "Pendencias Receita"
+report_path_header = "Relatorio Pendencias"
+processed_at_header = "Processado em"
+selected_values = ["SIM", "X", "1", "TRUE"]
+skip_rows_with_existing_status = true
+overwrite_existing_results = false
+attach_if_open = true
+excel_visible = false
+
+[portal]
+url = "https://servicos.receitafederal.gov.br/servico/pendencias/#/analise-pendencias"
+browser_channel = "msedge"
+manual_login_timeout_seconds = 900
+representation_timeout_seconds = 35
+analysis_timeout_seconds = 90
+download_timeout_seconds = 60
+minimum_seconds_between_representations = 40
+
+# O seletor abaixo é o botão submit correto fornecido pela inspeção manual.
+submit_selector = "button[type='submit'].br-button.primary.block.margin-5:visible"
+cnpj_input_selector = "input[placeholder='Digite o CPF ou CNPJ']:visible"
+procurador_select_selector = "ng-select:visible"
+procurador_option_selector = ".ng-dropdown-panel .ng-option:visible"
+
+# PENDENTE DE VALIDAÇÃO LOCAL: preencher após inspecionar o cabeçalho autenticado.
+# Se vazio e o campo de CNPJ não estiver visível, a automação falhará de forma segura.
+sidebar_toggle_selector = ""
+
+# Opcional. Se vazio, o código procura uma seção intitulada "Dados cadastrais"
+# e somente aceita CNPJ encontrado dentro dessa seção.
+identity_scope_selector = ""
+
+# PENDENTE DE VALIDAÇÃO LOCAL: seletor único do botão/link que baixa o relatório.
+# Se vazio, o código tenta apenas nomes acessíveis contendo "baixar/download" + "relatorio".
+report_download_selector = ""
+
+no_pendencies_texts = [
+  "Não foram encontradas pendências",
+  "Não existem pendências",
+]
+pending_texts = [
+  "Foram encontradas pendências",
+  "Pendências encontradas",
+]
+
+[runtime]
+state_db = ".runtime/estado.sqlite3"
+event_log = ".runtime/logs/automacao.jsonl"
+evidence_dir = ".runtime/evidence"
+report_dir = ".runtime/reports"
+browser_profile_dir = ".runtime/browser-profile"
