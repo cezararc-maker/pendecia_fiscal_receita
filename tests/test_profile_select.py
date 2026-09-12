@@ -2,6 +2,7 @@ import pytest
 
 from receita_automacao.portal_representation import select_procurador_and_submit
 from receita_automacao.worker_common import (
+    PROFILE_ARROW_SELECTOR,
     PROFILE_OPTION_SELECTOR,
     PROFILE_PLACEHOLDER_SELECTOR,
     QueueCompany,
@@ -37,8 +38,41 @@ class FakeClickableText:
     async def click(self):
         self.events.append((self.event_name, self.text))
 
-    async def scroll_into_view_if_needed(self):
-        raise AssertionError("Profile placeholder must not trigger explicit scrolling")
+
+class FakeArrow:
+    def __init__(self, events):
+        self.events = events
+
+    async def is_visible(self):
+        return True
+
+    async def click(self):
+        self.events.append(("arrow_click", "ng-arrow-wrapper"))
+
+
+class FakeNgSelect:
+    def __init__(self, arrow=None):
+        self.arrow = arrow
+
+    async def count(self):
+        return 1
+
+    async def is_visible(self):
+        return True
+
+    def locator(self, selector):
+        assert selector == PROFILE_ARROW_SELECTOR
+        return FakeCollection([] if self.arrow is None else [self.arrow])
+
+
+class FakePlaceholder(FakeClickableText):
+    def __init__(self, text, events, ng_select):
+        super().__init__(text, "placeholder_click", events)
+        self.ng_select = ng_select
+
+    def locator(self, selector):
+        assert selector == "xpath=ancestor::ng-select[1]"
+        return self.ng_select
 
 
 class FakeForm:
@@ -77,18 +111,8 @@ class FakeLogger:
         return None
 
 
-@pytest.mark.asyncio
-async def test_profile_placeholder_opens_select_without_scroll_before_critical_sequence():
-    events = []
-    placeholder = FakeClickableText(
-        "Digite um perfil de representação",
-        "placeholder_click",
-        events,
-    )
-    option = FakeClickableText("Procurador", "option_click", events)
-    form = FakeForm(placeholder)
-    page = FakePage(option, events)
-    company = QueueCompany(
+def make_company():
+    return QueueCompany(
         codigo="1",
         nome="EMPRESA TESTE",
         identificador=VALID_CNPJ,
@@ -96,7 +120,40 @@ async def test_profile_placeholder_opens_select_without_scroll_before_critical_s
         tipo_inscricao="CNPJ",
     )
 
-    await select_procurador_and_submit(page, form, company, FakeLogger())
+
+@pytest.mark.asyncio
+async def test_profile_arrow_opens_select_before_critical_sequence():
+    events = []
+    arrow = FakeArrow(events)
+    ng_select = FakeNgSelect(arrow)
+    placeholder = FakePlaceholder("Digite um perfil de representação", events, ng_select)
+    option = FakeClickableText("Procurador", "option_click", events)
+    form = FakeForm(placeholder)
+    page = FakePage(option, events)
+
+    await select_procurador_and_submit(page, form, make_company(), FakeLogger())
+
+    assert events == [
+        ("arrow_click", "ng-arrow-wrapper"),
+        ("option_click", "Procurador"),
+        ("press", "Tab"),
+        ("wait", 300),
+        ("press", "Tab"),
+        ("wait", 300),
+        ("press", "Space"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_profile_placeholder_is_safe_fallback_when_arrow_is_not_visible():
+    events = []
+    ng_select = FakeNgSelect(None)
+    placeholder = FakePlaceholder("Digite um perfil de representação", events, ng_select)
+    option = FakeClickableText("Procurador", "option_click", events)
+    form = FakeForm(placeholder)
+    page = FakePage(option, events)
+
+    await select_procurador_and_submit(page, form, make_company(), FakeLogger())
 
     assert events == [
         ("placeholder_click", "Digite um perfil de representação"),
