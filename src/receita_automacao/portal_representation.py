@@ -20,6 +20,7 @@ from .worker_common import (
     CNPJ_INPUT_SELECTOR,
     PORTAL_HOST,
     PORTAL_URL,
+    PROFILE_ARROW_SELECTOR,
     PROFILE_BUTTON_SELECTOR,
     PROFILE_OPTION_SELECTOR,
     PROFILE_PLACEHOLDER_SELECTOR,
@@ -208,6 +209,19 @@ async def _matching_profile_placeholders(form: Locator) -> list[Locator]:
     return matches
 
 
+async def _open_profile_select(placeholder: Locator) -> str:
+    ng_select = placeholder.locator("xpath=ancestor::ng-select[1]")
+    if await ng_select.count() == 1 and await ng_select.is_visible():
+        arrows = await visible_items(ng_select.locator(PROFILE_ARROW_SELECTOR))
+        if len(arrows) == 1:
+            await arrows[0].click()
+            return "arrow"
+
+    # Fallback seguro: o placeholder é visível no mesmo ng-select identificado pelo texto exato.
+    await placeholder.click()
+    return "placeholder"
+
+
 async def _matching_procurador_options(page: Page) -> list[Locator]:
     matches: list[Locator] = []
     for option in await visible_items(page.locator(PROFILE_OPTION_SELECTOR)):
@@ -246,9 +260,9 @@ async def select_procurador_and_submit(
     )
 
     try:
-        # O input interno do ng-select pode ter área clicável mínima e provocar tentativas de
-        # rolagem do Playwright. O portal expõe um placeholder visível e estável; clicamos nele.
-        await placeholders[0].click()
+        # Preferimos a seta visível do ng-select; se ela não existir de forma única, usamos
+        # o placeholder exato do mesmo controle. Não clicamos no input interno invisível.
+        open_method = await _open_profile_select(placeholders[0])
         options = await _matching_procurador_options(page)
         if len(options) != 1:
             raise WorkerError(
@@ -256,6 +270,15 @@ async def select_procurador_and_submit(
                 "select_procurador",
                 f"Esperada 1 opção Procurador visível; encontradas {len(options)}.",
             )
+
+        logger.emit(
+            "profile_select_opened",
+            company=company.nome,
+            identifier=company.identificador,
+            stage="select_procurador",
+            code=company.codigo,
+            method=open_method,
+        )
 
         # Nenhuma leitura, log, refocus ou outra operação pode entrar dentro desta sequência.
         await critical_submit_sequence(page, options[0])
