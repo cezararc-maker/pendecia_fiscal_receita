@@ -65,16 +65,28 @@ Registrar se a validação apareceu.
 
 ## Ensaio C — fluxo automático completo
 
-Desativar o diagnóstico:
+Ativar o modo `full`:
+
+```powershell
+PowerShell -ExecutionPolicy Bypass -File ".\scripts\ativar-diagnostico-receita.ps1" `
+  -WorkbookPath "C:\CAMINHO\DA\COPIA\Controle_Folha_Cezar_Prototipo_Pendencias_v1.xlsm" `
+  -Stage full
+```
+
+O modo `full` força uma única empresa, mas executa exatamente o fluxo automático normal: CNPJ -> Procurador -> envio da representação.
+
+Registrar se a validação apareceu.
+
+## Encerrar o diagnóstico
+
+Depois dos três ensaios:
 
 ```powershell
 PowerShell -ExecutionPolicy Bypass -File ".\scripts\desativar-diagnostico-receita.ps1" `
   -WorkbookPath "C:\CAMINHO\DA\COPIA\Controle_Folha_Cezar_Prototipo_Pendencias_v1.xlsm"
 ```
 
-Executar o fluxo normal com uma empresa CNPJ.
-
-Registrar se a validação apareceu.
+A integração volta ao modo de validação normal que já estiver configurado, por exemplo 2 empresas.
 
 ## Como interpretar
 
