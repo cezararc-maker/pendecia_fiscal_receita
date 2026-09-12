@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 $queue = Get-Content -LiteralPath $QueuePath -Raw | ConvertFrom-Json
 $executionFolder = Split-Path -Parent $QueuePath
 $type = ([string]$queue.tipo).ToUpperInvariant()
+$validationMarker = Join-Path $PSScriptRoot 'modo-validacao-uma-empresa.flag'
 
 function Write-FatalProgress([string]$Stage, [string]$Message) {
     $state = [ordered]@{
@@ -25,6 +26,26 @@ if ($type -ne 'RECEITA') {
     }
     & $legacy -QueuePath $QueuePath
     exit $LASTEXITCODE
+}
+
+if (Test-Path -LiteralPath $validationMarker) {
+    $companies = @($queue.empresas)
+    if ($companies.Count -ne 1) {
+        Write-FatalProgress `
+            'Modo de validacao: fila bloqueada' `
+            "O primeiro teste permite exatamente 1 empresa. A fila atual contem $($companies.Count). Selecione somente um CNPJ e tente novamente."
+        exit 6
+    }
+
+    $onlyCompany = $companies[0]
+    $identifierType = ([string]$onlyCompany.tipoIdentificador).ToUpperInvariant()
+    $identifier = ([string]$onlyCompany.identificador) -replace '\D', ''
+    if ($identifierType -ne 'CNPJ' -or $identifier.Length -ne 14) {
+        Write-FatalProgress `
+            'Modo de validacao: empresa nao elegivel' `
+            'O primeiro teste permite somente uma empresa identificada como CNPJ com 14 digitos.'
+        exit 7
+    }
 }
 
 try {
