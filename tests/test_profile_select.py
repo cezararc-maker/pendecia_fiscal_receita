@@ -40,13 +40,17 @@ class FakeClickableText:
 
 
 class FakeArrow:
-    def __init__(self, events):
+    def __init__(self, events, fail=False):
         self.events = events
+        self.fail = fail
 
     async def is_visible(self):
         return True
 
     async def click(self):
+        if self.fail:
+            self.events.append(("arrow_failed", "ng-arrow-wrapper"))
+            raise RuntimeError("arrow click failed")
         self.events.append(("arrow_click", "ng-arrow-wrapper"))
 
 
@@ -156,6 +160,30 @@ async def test_profile_placeholder_is_safe_fallback_when_arrow_is_not_visible():
     await select_procurador_and_submit(page, form, make_company(), FakeLogger())
 
     assert events == [
+        ("placeholder_click", "Digite um perfil de representação"),
+        ("option_click", "Procurador"),
+        ("press", "Tab"),
+        ("wait", 300),
+        ("press", "Tab"),
+        ("wait", 300),
+        ("press", "Space"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_profile_placeholder_is_safe_fallback_when_arrow_click_fails():
+    events = []
+    arrow = FakeArrow(events, fail=True)
+    ng_select = FakeNgSelect(arrow)
+    placeholder = FakePlaceholder("Digite um perfil de representação", events, ng_select)
+    option = FakeClickableText("Procurador", "option_click", events)
+    form = FakeForm(placeholder)
+    page = FakePage(option, events)
+
+    await select_procurador_and_submit(page, form, make_company(), FakeLogger())
+
+    assert events == [
+        ("arrow_failed", "ng-arrow-wrapper"),
         ("placeholder_click", "Digite um perfil de representação"),
         ("option_click", "Procurador"),
         ("press", "Tab"),
