@@ -30,15 +30,19 @@ if ($type -ne 'RECEITA') {
 }
 
 $diagnosticStage = 'normal'
+$workerDiagnosticStage = 'normal'
 if (Test-Path -LiteralPath $diagnosticMarker) {
     try {
         $candidate = (Get-Content -LiteralPath $diagnosticMarker -Raw).Trim().ToLowerInvariant()
-        if ($candidate -in @('after-cnpj', 'after-procurador')) {
+        if ($candidate -in @('after-cnpj', 'after-procurador', 'full')) {
             $diagnosticStage = $candidate
+            if ($candidate -ne 'full') {
+                $workerDiagnosticStage = $candidate
+            }
         } else {
             Write-FatalProgress `
                 'Diagnostico invalido' `
-                "O marcador de diagnostico contem '$candidate'. Use after-cnpj ou after-procurador."
+                "O marcador de diagnostico contem '$candidate'. Use after-cnpj, after-procurador ou full."
             exit 8
         }
     } catch {
@@ -119,7 +123,7 @@ if (-not (Test-Path -LiteralPath $python)) {
 
 $stdout = Join-Path $executionFolder 'worker-python.stdout.log'
 $stderr = Join-Path $executionFolder 'worker-python.stderr.log'
-$arguments = '-m receita_automacao.queue_worker --queue "' + $QueuePath + '" --diagnostic-stage ' + $diagnosticStage
+$arguments = '-m receita_automacao.queue_worker --queue "' + $QueuePath + '" --diagnostic-stage ' + $workerDiagnosticStage
 $process = Start-Process -FilePath $python -ArgumentList $arguments -WorkingDirectory $repoRoot `
     -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
 $process.Id | Set-Content -LiteralPath (Join-Path $executionFolder 'worker.pid') -Encoding ASCII
