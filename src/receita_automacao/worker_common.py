@@ -30,6 +30,7 @@ SECURITY_CHALLENGE_RE = re.compile(
     (
         r"(?:Toque no item de seguran.a usado na cabe.a ou no rosto|"
         r"verifica..o de seguran.a|captcha|confirme sua identidade|"
+        r"confirme\s+que\s+voc[eê]\s+[ée]\s+uma\s+pessoa|"
         r"Selecione\s+tudo(?:\s+mais\s+silencioso)?(?:\s+que\s+o\s+item\s+mostrado)?)"
     ),
     re.IGNORECASE,
