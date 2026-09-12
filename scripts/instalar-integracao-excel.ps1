@@ -2,7 +2,10 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$WorkbookPath,
 
-    [switch]$ValidationMode
+    [switch]$ValidationMode,
+
+    [ValidateRange(1, 10)]
+    [int]$ValidationCompanyCount = 1
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,8 +49,9 @@ Copy-Item -LiteralPath $newStop -Destination $currentStop -Force
 
 if ($ValidationMode) {
     @(
+        "EMPRESAS=$ValidationCompanyCount",
         'MODO DE VALIDACAO ATIVO',
-        'A consulta da Receita sera bloqueada se a fila contiver mais de uma empresa.',
+        "A consulta da Receita sera bloqueada se a fila nao contiver exatamente $ValidationCompanyCount empresa(s).",
         ('Ativado em: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
     ) | Set-Content -LiteralPath $validationMarker -Encoding UTF8
 } elseif (Test-Path -LiteralPath $validationMarker) {
@@ -62,9 +66,9 @@ Write-Host "Workbook preservado: $workbook"
 Write-Host "Scripts atualizados em: $automationDir"
 Write-Host "Backup desta instalacao: $backupDir"
 if ($ValidationMode) {
-    Write-Host '[SEGURANCA] Modo de validacao ativo: exatamente 1 empresa CNPJ por fila.' -ForegroundColor Yellow
+    Write-Host "[SEGURANCA] Modo de validacao ativo: exatamente $ValidationCompanyCount empresa(s) CNPJ por fila." -ForegroundColor Yellow
     Write-Host "Marcador: $validationMarker"
 } else {
-    Write-Host 'Modo de validacao de uma empresa: desativado.'
+    Write-Host 'Modo de validacao: desativado.'
 }
 Write-Host 'O fluxo FGTS continua delegado ao iniciar-consulta-node.ps1 original.'
