@@ -1,4 +1,5 @@
 from receita_automacao.portal import classify_manual_gate
+from receita_automacao.worker_common import SECURITY_CHALLENGE_RE
 
 
 def test_classifies_login_page():
@@ -11,6 +12,10 @@ def test_classifies_additional_confirmation():
 
 def test_classifies_security_challenge_before_login():
     assert classify_manual_gate("https://servicos.receitafederal.gov.br/login/", "Digite o código de verificação") == "security_challenge"
+
+
+def test_recognizes_visual_human_verification_prompt():
+    assert SECURITY_CHALLENGE_RE.search("Confirme que você é uma pessoa")
 
 
 def test_returns_none_for_authenticated_service_without_gate():
