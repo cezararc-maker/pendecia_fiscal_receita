@@ -10,7 +10,9 @@ PORTAL_URL = "https://servicos.receitafederal.gov.br/servico/pendencias/#/analis
 PORTAL_HOST = "servicos.receitafederal.gov.br"
 CNPJ_INPUT_SELECTOR = 'input[placeholder="Digite o CPF ou CNPJ"]'
 SUBMIT_SELECTOR = 'button[type="submit"].br-button.primary.block.margin-5'
-COMBO_SELECTOR = 'ng-select input[role="combobox"]'
+PROFILE_PLACEHOLDER_SELECTOR = "ng-select .ng-placeholder"
+PROFILE_PLACEHOLDER_TEXT = "Digite um perfil de representação"
+PROFILE_OPTION_SELECTOR = ".ng-dropdown-panel .ng-option"
 PROFILE_BUTTON_SELECTOR = "#avatar-dropdown-trigger"
 NO_PENDENCY_RE = re.compile(r"Sem\s+pend[êe]ncia", re.IGNORECASE)
 HAS_PENDENCY_RE = re.compile(r"Com\s+pend[êe]ncia", re.IGNORECASE)
