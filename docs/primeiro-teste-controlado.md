@@ -48,6 +48,14 @@ Enquanto esse marcador existir, uma fila da Receita com quantidade diferente de 
 7. Não marque uma segunda empresa nesta etapa.
 8. Resolva manualmente qualquer CAPTCHA, confirmação adicional ou desafio de segurança.
 
+### Comportamento esperado do botão Representar
+
+No portal real, após preencher o CNPJ, o botão **Representar** permanece visível porém **desabilitado** enquanto nenhum perfil foi escolhido. Isso é esperado.
+
+O worker não deve tratar esse estado como erro. Primeiro ele valida que o botão pertence ao mesmo formulário do CNPJ, depois abre o campo `Digite um perfil de representação`, seleciona `Procurador` e executa imediatamente a sequência crítica `Tab -> 300 ms -> Tab -> 300 ms -> Space`. Nenhuma checagem de `is_enabled()`, refoco, `evaluate()`, gravação de arquivo ou diagnóstico é inserida entre o clique em `Procurador` e essa sequência.
+
+A habilitação do botão acontece como consequência da seleção de `Procurador`; a confirmação de sucesso continua sendo feita somente depois, pelo CNPJ e pelo `Resultado da Análise` exibidos pelo portal.
+
 Se a fila tiver zero ou mais de uma empresa, o modo de validação deve impedir a execução e registrar `ERRO_FATAL` no progresso.
 
 ## 3. Critérios de aprovação
